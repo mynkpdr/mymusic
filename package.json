@@ -1,0 +1,31 @@
+{
+  "name": "mymusic",
+  "version": "1.0.0",
+  "description": "Web music player for YouTube: search, queue, playlists, downloads, browser-only recommendations",
+  "scripts": {
+    "test": "node --test 'test/*.test.mjs'",
+    "start": "node server.js"
+  },
+  "type": "module",
+  "dependencies": {
+    "bgutils-js": "^4.0.3",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.1",
+    "jsdom": "^30.1.2",
+    "youtubei.js": "^18.1.0"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "author": "Mayank Kumar Poddar",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mynkpdr/mymusic.git"
+  },
+  "homepage": "https://github.com/mynkpdr/mymusic#readme",
+  "bugs": {
+    "url": "https://github.com/mynkpdr/mymusic/issues"
+  }
+}
