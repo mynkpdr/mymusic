@@ -366,7 +366,7 @@ async function playAt(i, startAt = 0) {
   audio.src = `/api/stream/${t.id}${OPUS ? '?fmt=webm' : ''}`;
   audio.onerror = () => {
     if (++P.fails >= 3) { P.fails = 0; return toast("Can't play these videos right now"); }
-    toast(`Can't play "${t.title}" — skipping`); setTimeout(() => nextTrack(true), 600);
+    toast(`Can't play "${t.title}" — skipping`); setTimeout(() => cur() === t && nextTrack(true), 600); // not if the user already moved on
   };
   audio.onloadedmetadata = () => { if (startAt) audio.currentTime = startAt; };
   audio.onplaying = () => (P.fails = 0);
@@ -395,6 +395,7 @@ async function nextTrack(auto) {
     const inQueue = new Set(P.queue.map((t) => t.id));
     const more = await related(last.id, inQueue);
     P.related = false;
+    if (cur() !== last) return renderQueue(); // user started something else while we were fetching
     if (more.length) { P.queue.push(...more.map(slim)); playAt(P.i + 1); } else renderQueue();
   } catch (e) { P.related = false; renderQueue(); toast(e.message); }
 }
@@ -949,7 +950,7 @@ function renderSearch(q = '') {
 }
 async function suggest(q) {
   q = q.trim(); fill('#act1', q ? 'clear' : 'mic');
-  const hist = lib.searches.filter((s) => !q || s.toLowerCase().includes(q.toLowerCase())).slice(0, 8);
+  const hist = lib.searches.filter((s) => !q || s.toLowerCase().includes(q.toLowerCase()));
   document.body.classList.toggle('hist', lib.searches.length > 0); fill('#clearIc', 'sweep');
   const row = (s, icon, del) => `<div class="sugg rip" data-sq="${esc(s)}"><span class="ib40 ib ts" style="pointer-events:none">${ic(icon)}</span><span class="t">${esc(s)}</span>${del ? `<button class="ib ib40 ts" data-sdel="${esc(s)}" aria-label="Delete">${ic('clear')}</button>` : ''}<button class="ib ib40 ts" data-sset="${esc(s)}" aria-label="Use as query">${ic('tl')}</button></div>`;
   const draw = (sugg) => { if (!document.body.classList.contains('searching') || $('#sbox').value.trim() !== q) return; $('#page').innerHTML = hist.map((s) => row(s, 'history', true)).join('') + sugg.filter((s) => !hist.includes(s)).map((s) => row(s, 'search', false)).join('') + '<div style="height:56px"></div>'; };

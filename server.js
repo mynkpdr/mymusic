@@ -106,7 +106,8 @@ function loadVideo(id) {
   return inflight.get(id);
 }
 async function fetchVideo(id) {
-  const info = await yt.getBasicInfo(id, { client: 'YTMUSIC' });
+  let info = await yt.getBasicInfo(id, { client: 'YTMUSIC' });
+  if (info.playability_status?.status !== 'OK') info = await yt.getBasicInfo(id, { client: 'MWEB' }); // YTMUSIC only serves music-catalog videos; plain uploads need MWEB (WEB has no direct URLs, IOS/ANDROID_VR streams cut at ~1MB)
   if (info.playability_status?.status !== 'OK') throw new Error(info.playability_status?.reason ?? 'unplayable');
   const entry = { exp: Date.now() + 3 * 3600e3, title: info.basic_info.title, author: info.basic_info.author ?? '', duration: info.basic_info.duration ?? 0,
     formats: info.streaming_data.adaptive_formats, pot: null, urls: new Map() };
