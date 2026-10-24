@@ -958,7 +958,7 @@ async function suggest(q) {
   if (q) { try { draw(await api('suggest?q=' + encodeURIComponent(q))); } catch { /* suggestions are optional */ } }
 }
 function submitSearch(q) {
-  q = q.trim(); if (!q) return; lib.searches = [q, ...lib.searches.filter((s) => s !== q)].slice(0, 20); lib.save();
+  q = q.trim(); if (!q) return; lib.searches = [q, ...lib.searches.filter((s) => s !== q)]; lib.save();
   replacing = true; location.replace(`#/results/${encodeURIComponent(q)}`); document.body.classList.remove('searching'); render();
 }
 $('#sbox').oninput = () => { typed = null; clearTimeout(sugT); const q = $('#sbox').value; fill('#act1', q.trim() ? 'clear' : 'mic'); sugT = setTimeout(() => suggest(q), 180); };
@@ -1109,18 +1109,26 @@ $('#qMore').onclick = (e) => { e.stopPropagation(); menu([{ label: 'Create local
 $('#qlist').addEventListener('pointerdown', (e) => {
   const h = e.target.closest('[data-drag]'); if (!h) return; e.preventDefault();
   const row = h.closest('.qitem'), list = $('#qlist'), from = +h.dataset.drag; row.classList.add('drag'); h.setPointerCapture(e.pointerId);
-  let to = from;
-  const move = (ev) => {
-    const rows = [...list.children], rect = list.getBoundingClientRect(); const y = ev.clientY;
-    const z = pageZoom(); row.style.transform = `translateY(${(y - e.clientY) / z}px)`;
+  let to = from, y = e.clientY, raf = 0;
+  const y0 = e.clientY, s0 = list.scrollTop;
+  const place = () => {
+    const rows = [...list.children], z = pageZoom();
+    row.style.transform = `translateY(${(y - y0) / z + list.scrollTop - s0}px)`; // follows the pointer even after the list scrolled under it
     to = rows.findIndex((r) => r !== row && y < r.getBoundingClientRect().top + (r.offsetHeight * z) / 2); if (to < 0) to = rows.length - 1; else if (to > from) to -= 1;
-    if (y < rect.top + 40) list.scrollTop -= 8; else if (y > rect.bottom - 40) list.scrollTop += 8;
   };
+  const tick = () => { // autoscroll while the pointer rests near an edge, not only while it moves
+    const rect = list.getBoundingClientRect();
+    if (y < rect.top + 40) list.scrollTop -= 12; else if (y > rect.bottom - 40) list.scrollTop += 12;
+    place(); raf = requestAnimationFrame(tick);
+  };
+  const move = (ev) => { y = ev.clientY; place(); };
   const up = () => {
+    cancelAnimationFrame(raf);
     h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); row.classList.remove('drag');
     if (to !== from) { const curId = cur()?.id; const [m] = P.queue.splice(from, 1); P.queue.splice(to, 0, m); P.i = P.queue.findIndex((t) => t.id === curId); saveQueue(); }
     renderQueue();
   };
+  raf = requestAnimationFrame(tick);
   h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
 });
 
