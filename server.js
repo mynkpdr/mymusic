@@ -1,7 +1,7 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { Innertube, Platform } from 'youtubei.js';
-import { mintPoToken } from './pot.js';
+import { mintPoToken, resetPoToken } from './pot.js';
 import { Readable } from 'node:stream';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +20,10 @@ const SB_API = 'https://sponsor.ajay.app/api/skipSegments';
 const dir = path.dirname(fileURLToPath(import.meta.url));
 
 Platform.shim.eval = async (data) => new Function(data.output)();
-const yt = await Innertube.create();
+let yt = await Innertube.create();
+// Some sessions / PO-token minters are refused by googlevideo (403 on every stream) and stay that way until restart: rebuild both.
+let renewing;
+const renewSession = () => (renewing ??= (async () => { yt = await Innertube.create(); resetPoToken(); videos.clear(); })().finally(() => { renewing = null; }));
 const app = express();
 if (env.TRUST_PROXY) app.set('trust proxy', /^\d+$/.test(env.TRUST_PROXY) ? +env.TRUST_PROXY : env.TRUST_PROXY); // set when behind nginx/Caddy/Cloudflare so limits count real client IPs
 app.disable('x-powered-by');
@@ -109,6 +112,7 @@ async function fetchVideo(id) {
   let info = await yt.getBasicInfo(id, { client: 'YTMUSIC' });
   if (info.playability_status?.status !== 'OK') info = await yt.getBasicInfo(id, { client: 'MWEB' }); // YTMUSIC only serves music-catalog videos; plain uploads need MWEB (WEB has no direct URLs, IOS/ANDROID_VR streams cut at ~1MB)
   if (info.playability_status?.status !== 'OK') throw new Error(info.playability_status?.reason ?? 'unplayable');
+  if (!info.streaming_data?.adaptive_formats.some((f) => f.url || f.signature_cipher || f.cipher)) throw new Error('No valid URL to decipher'); // some sessions get URL-less (SABR-only) formats
   const entry = { exp: Date.now() + 3 * 3600e3, title: info.basic_info.title, author: info.basic_info.author ?? '', duration: info.basic_info.duration ?? 0,
     formats: info.streaming_data.adaptive_formats, pot: null, urls: new Map() };
   videos.set(id, entry);
@@ -155,14 +159,20 @@ async function proxy(req, res, id, video, mime) {
   const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '');
   const start = m?.[1] ? +m[1] : 0;
   let s, end, up;
-  for (const attempt of [1, 2]) { // a cached stream URL can go stale: on a refusal, look the video up again once
-    s = await resolve(id, video, mime);
-    end = Math.min(m?.[2] ? +m[2] : Infinity, start + CHUNK - 1, s.size - 1);
-    if (start >= s.size) return res.status(416).set('Content-Range', `bytes */${s.size}`).end();
-    up = await upstream(s.url, start, end);
-    if (up.ok) break;
-    videos.delete(id);
-    if (attempt === 2) return res.status(502).json({ error: `upstream ${up.status}` });
+  for (let attempt = 1; ; attempt++) { // refusal or URL-less lookup: retry once as is (stale URL), then on a rebuilt session each time (bad session)
+    try {
+      s = await resolve(id, video, mime);
+      end = Math.min(m?.[2] ? +m[2] : Infinity, start + CHUNK - 1, s.size - 1);
+      if (start >= s.size) return res.status(416).set('Content-Range', `bytes */${s.size}`).end();
+      up = await upstream(s.url, start, end);
+      if (up.ok) break;
+      throw new Error(`upstream ${up.status}`);
+    } catch (err) {
+      videos.delete(id);
+      if (!/^upstream|No valid URL/.test(err.message)) throw err;
+      if (attempt === 4) return res.status(502).json({ error: err.message });
+      if (attempt >= 2) await renewSession();
+    }
   }
   res.status(206).set({ 'Content-Type': s.mime, 'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1, 'Content-Range': `bytes ${start}-${end}/${s.size}` });
   Readable.fromWeb(up.body).on('error', () => res.destroy()).pipe(res);

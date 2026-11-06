@@ -35,3 +35,4 @@ export async function mintPoToken(contentBinding) {
   if (!minter || Date.now() > expires) await (pending ??= build().finally(() => (pending = null)));
   return minter.mintAsWebsafeString(contentBinding);
 }
+export const resetPoToken = () => { minter = null; }; // next mint rebuilds BotGuard from scratch
